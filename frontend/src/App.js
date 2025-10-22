@@ -87,5 +87,3 @@ function App() {
 }
 
 export default App;
-
-const React = require('react');
