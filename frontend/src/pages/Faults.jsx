@@ -221,7 +221,7 @@ const Faults = () => {
                           fault.status !== 'closed' && (
                             <Button
                               size="sm"
-                              onClick={() => handleConfirm(fault.id);
+                              onClick={() => handleConfirm(fault.id)}
                               data-testid={`confirm-btn-${fault.id}`}
                             >
                               <CheckCircle className="w-4 h-4 mr-1" />
