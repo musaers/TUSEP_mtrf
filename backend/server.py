@@ -130,6 +130,7 @@ class FaultRecordStartRepair(BaseModel):
 
 class FaultRecordEndRepair(BaseModel):
     repair_notes: str
+    repair_category: str  # YENI: Zorunlu onarım kategorisi
 
 class Log(BaseModel):
     model_config = ConfigDict(extra="ignore")
