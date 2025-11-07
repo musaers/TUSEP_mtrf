@@ -81,12 +81,25 @@ const Faults = () => {
   };
 
   const handleEndRepair = async () => {
-    if (!repairNotes || !selectedFault) return;
+    if (!repairNotes || !selectedFault || !repairCategory) {
+      toast.error('Lütfen tüm alanları doldurun');
+      return;
+    }
+    
+    if (repairNotes.length < 20) {
+      toast.error('Onarım notları en az 20 karakter olmalıdır');
+      return;
+    }
+    
     try {
-      await axios.post(`${API}/faults/${selectedFault.id}/end-repair`, { repair_notes: repairNotes });
+      await axios.post(`${API}/faults/${selectedFault.id}/end-repair`, { 
+        repair_notes: repairNotes,
+        repair_category: repairCategory 
+      });
       toast.success('Onarım tamamlandı');
       setShowRepairDialog(false);
       setRepairNotes('');
+      setRepairCategory('');
       fetchFaults();
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Onarım tamamlanamadı');
