@@ -141,6 +141,43 @@ class Log(BaseModel):
     user_id: Optional[str] = None
     user_name: Optional[str] = None
 
+# YENI: Transfer Yönetimi Modelleri
+class TransferStatus:
+    PENDING = "pending"  # Kalite onayı bekliyor
+    APPROVED = "approved"  # Onaylandı
+    REJECTED = "rejected"  # Reddedildi
+    COMPLETED = "completed"  # Transfer tamamlandı
+
+class EquipmentTransfer(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    device_id: str
+    device_code: str = ""
+    device_type: str = ""
+    from_location: str
+    to_location: str
+    requested_by: str
+    requested_by_name: str = ""
+    requested_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    reason: str
+    status: str = TransferStatus.PENDING
+    approved_by: Optional[str] = None
+    approved_by_name: Optional[str] = None
+    approved_at: Optional[datetime] = None
+    rejection_reason: Optional[str] = None
+    completed_at: Optional[datetime] = None
+
+class TransferCreate(BaseModel):
+    device_id: str
+    to_location: str
+    reason: str
+
+class TransferApprove(BaseModel):
+    pass
+
+class TransferReject(BaseModel):
+    rejection_reason: str
+
 # ===== AUTHENTICATION =====
 
 def create_access_token(data: dict):
