@@ -23,6 +23,7 @@ const Faults = () => {
   const [showRepairDialog, setShowRepairDialog] = useState(false);
   const [assignTo, setAssignTo] = useState('');
   const [repairNotes, setRepairNotes] = useState('');
+  const [repairCategory, setRepairCategory] = useState('');
 
   useEffect(() => {
     fetchFaults();
