@@ -81,6 +81,8 @@ function App() {
             <Route path="faults/create" element={<CreateFault />} />
             <Route path="reports" element={<Reports />} />
             <Route path="users" element={<Users />} />
+            <Route path="transfers" element={<Transfers />} />
+            <Route path="quality-dashboard" element={<QualityDashboard />} />
           </Route>
         </Routes>
       </BrowserRouter>
