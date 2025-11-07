@@ -294,17 +294,32 @@ const Faults = () => {
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="repair-notes">Onarım Notları</Label>
+              <Label>Onarım Kategorisi *</Label>
+              <Select value={repairCategory} onValueChange={setRepairCategory}>
+                <SelectTrigger data-testid="repair-category-select">
+                  <SelectValue placeholder="Kategori seçin" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="part_replacement">Parça Değişimi</SelectItem>
+                  <SelectItem value="adjustment">Ayarlama/Kalibrasyon</SelectItem>
+                  <SelectItem value="complete_repair">Komple Onarım</SelectItem>
+                  <SelectItem value="other">Diğer</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="repair-notes">Onarım Notları * (min 20 karakter)</Label>
               <Textarea
                 id="repair-notes"
                 data-testid="repair-notes-input"
-                placeholder="Yapılan işlemler, değiştirilen parçalar vb."
+                placeholder="Yapılan işlemler, değiştirilen parçalar vb. (en az 20 karakter)"
                 value={repairNotes}
                 onChange={(e) => setRepairNotes(e.target.value)}
                 rows={4}
               />
+              <p className="text-xs text-gray-600">{repairNotes.length}/20 karakter</p>
             </div>
-            <Button onClick={handleEndRepair} className="w-full" disabled={!repairNotes} data-testid="confirm-end-repair-btn">
+            <Button onClick={handleEndRepair} className="w-full" disabled={!repairNotes || !repairCategory} data-testid="confirm-end-repair-btn">
               Tamamla
             </Button>
           </div>
