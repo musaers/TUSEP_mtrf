@@ -703,6 +703,198 @@ async def technician_performance_report(current_user: User = Depends(get_current
     
     return report_data
 
+# ===== TRANSFER MANAGEMENT ROUTES =====
+
+@api_router.post("/transfers", response_model=EquipmentTransfer)
+async def create_transfer(transfer_data: TransferCreate, current_user: User = Depends(get_current_user)):
+    # Get device
+    device = await db.devices.find_one({"id": transfer_data.device_id}, {"_id": 0})
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+    
+    transfer = EquipmentTransfer(
+        device_id=transfer_data.device_id,
+        device_code=device['code'],
+        device_type=device['type'],
+        from_location=device['location'],
+        to_location=transfer_data.to_location,
+        requested_by=current_user.id,
+        requested_by_name=current_user.name,
+        reason=transfer_data.reason
+    )
+    
+    transfer_dict = transfer.model_dump()
+    transfer_dict['requested_at'] = transfer_dict['requested_at'].isoformat()
+    
+    await db.equipment_transfers.insert_one(transfer_dict)
+    
+    return transfer
+
+@api_router.get("/transfers")
+async def get_transfers(status: Optional[str] = None, current_user: User = Depends(get_current_user)):
+    query = {}
+    if status:
+        query['status'] = status
+    
+    transfers = await db.equipment_transfers.find(query, {"_id": 0}).sort("requested_at", -1).to_list(1000)
+    for transfer in transfers:
+        for field in ['requested_at', 'approved_at', 'completed_at']:
+            if isinstance(transfer.get(field), str):
+                transfer[field] = datetime.fromisoformat(transfer[field])
+    return transfers
+
+@api_router.post("/transfers/{transfer_id}/approve")
+async def approve_transfer(transfer_id: str, current_user: User = Depends(get_current_user)):
+    if current_user.role != UserRole.QUALITY:
+        raise HTTPException(status_code=403, detail="Only quality department can approve transfers")
+    
+    transfer = await db.equipment_transfers.find_one({"id": transfer_id}, {"_id": 0})
+    if not transfer:
+        raise HTTPException(status_code=404, detail="Transfer not found")
+    
+    if transfer['status'] != TransferStatus.PENDING:
+        raise HTTPException(status_code=400, detail="Transfer is not pending")
+    
+    approved_at = datetime.now(timezone.utc)
+    
+    # Update transfer status
+    await db.equipment_transfers.update_one(
+        {"id": transfer_id},
+        {"$set": {
+            "status": TransferStatus.APPROVED,
+            "approved_by": current_user.id,
+            "approved_by_name": current_user.name,
+            "approved_at": approved_at.isoformat()
+        }}
+    )
+    
+    # Update device location
+    await db.devices.update_one(
+        {"id": transfer['device_id']},
+        {"$set": {"location": transfer['to_location']}}
+    )
+    
+    # Mark as completed
+    await db.equipment_transfers.update_one(
+        {"id": transfer_id},
+        {"$set": {
+            "status": TransferStatus.COMPLETED,
+            "completed_at": approved_at.isoformat()
+        }}
+    )
+    
+    return {"message": "Transfer approved and completed"}
+
+@api_router.post("/transfers/{transfer_id}/reject")
+async def reject_transfer(transfer_id: str, reject_data: TransferReject, current_user: User = Depends(get_current_user)):
+    if current_user.role != UserRole.QUALITY:
+        raise HTTPException(status_code=403, detail="Only quality department can reject transfers")
+    
+    transfer = await db.equipment_transfers.find_one({"id": transfer_id}, {"_id": 0})
+    if not transfer:
+        raise HTTPException(status_code=404, detail="Transfer not found")
+    
+    if transfer['status'] != TransferStatus.PENDING:
+        raise HTTPException(status_code=400, detail="Transfer is not pending")
+    
+    await db.equipment_transfers.update_one(
+        {"id": transfer_id},
+        {"$set": {
+            "status": TransferStatus.REJECTED,
+            "approved_by": current_user.id,
+            "approved_by_name": current_user.name,
+            "approved_at": datetime.now(timezone.utc).isoformat(),
+            "rejection_reason": reject_data.rejection_reason
+        }}
+    )
+    
+    return {"message": "Transfer rejected"}
+
+# ===== EXCEL REPORT ROUTES =====
+
+from excel_service import ExcelReportService
+from fastapi.responses import StreamingResponse
+
+@api_router.get("/reports/excel/device-failure-frequency")
+async def download_device_failure_frequency(year: Optional[int] = None, current_user: User = Depends(get_current_user)):
+    if current_user.role != UserRole.QUALITY:
+        raise HTTPException(status_code=403, detail="Only quality department can download reports")
+    
+    if not year:
+        year = datetime.now(timezone.utc).year
+    
+    excel_file = await ExcelReportService.generate_device_failure_frequency_report(db, year)
+    
+    return StreamingResponse(
+        excel_file,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename=Cihaz_Arizalanma_Sikligi_{year}.xlsx"}
+    )
+
+@api_router.get("/reports/excel/intervention-duration")
+async def download_intervention_duration(year: Optional[int] = None, current_user: User = Depends(get_current_user)):
+    if current_user.role != UserRole.QUALITY:
+        raise HTTPException(status_code=403, detail="Only quality department can download reports")
+    
+    if not year:
+        year = datetime.now(timezone.utc).year
+    
+    excel_file = await ExcelReportService.generate_intervention_duration_report(db, year)
+    
+    return StreamingResponse(
+        excel_file,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename=Mudahale_Suresi_{year}.xlsx"}
+    )
+
+@api_router.get("/reports/excel/facility-issues")
+async def download_facility_issues(year: Optional[int] = None, current_user: User = Depends(get_current_user)):
+    if current_user.role != UserRole.QUALITY:
+        raise HTTPException(status_code=403, detail="Only quality department can download reports")
+    
+    if not year:
+        year = datetime.now(timezone.utc).year
+    
+    excel_file = await ExcelReportService.generate_facility_issues_report(db, year)
+    
+    return StreamingResponse(
+        excel_file,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename=Tesis_Sorunlari_{year}.xlsx"}
+    )
+
+# ===== QUALITY DASHBOARD LOGS =====
+
+@api_router.get("/quality/all-logs")
+async def get_all_system_logs(current_user: User = Depends(get_current_user)):
+    if current_user.role != UserRole.QUALITY:
+        raise HTTPException(status_code=403, detail="Only quality department can view all logs")
+    
+    logs = await db.logs.find({}, {"_id": 0}).sort("timestamp", -1).limit(500).to_list(500)
+    for log in logs:
+        if isinstance(log.get('timestamp'), str):
+            log['timestamp'] = datetime.fromisoformat(log['timestamp'])
+    return logs
+
+@api_router.get("/quality/system-stats")
+async def get_quality_system_stats(current_user: User = Depends(get_current_user)):
+    if current_user.role != UserRole.QUALITY:
+        raise HTTPException(status_code=403, detail="Only quality department can view system stats")
+    
+    total_users = await db.users.count_documents({})
+    total_devices = await db.devices.count_documents({})
+    total_faults = await db.fault_records.count_documents({})
+    total_transfers = await db.equipment_transfers.count_documents({})
+    pending_transfers = await db.equipment_transfers.count_documents({"status": TransferStatus.PENDING})
+    
+    return {
+        "total_users": total_users,
+        "total_devices": total_devices,
+        "total_faults": total_faults,
+        "total_transfers": total_transfers,
+        "pending_transfers": pending_transfers
+    }
+
 app.include_router(api_router)
 
 app.add_middleware(
