@@ -9,6 +9,8 @@ import Faults from "./pages/Faults";
 import CreateFault from "./pages/CreateFault";
 import Reports from "./pages/Reports";
 import Users from "./pages/Users";
+import Transfers from "./pages/Transfers";
+import QualityDashboard from "./pages/QualityDashboard";
 import Layout from "./components/Layout";
 import { Toaster } from "./components/ui/sonner";
 import "@/App.css";
