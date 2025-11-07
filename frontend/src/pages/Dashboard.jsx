@@ -4,6 +4,7 @@ import axios from 'axios';
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/card';
 import { Activity, AlertCircle, CheckCircle, Clock, TrendingUp } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line } from 'recharts';
+import { formatTimeMinutesSeconds } from '../utils/timeFormat';
 
 const Dashboard = () => {
   const { user } = useContext(AuthContext);
