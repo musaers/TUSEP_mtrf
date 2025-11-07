@@ -188,8 +188,8 @@ const DeviceDetails = () => {
                     </td>
                     <td className="py-3 px-4 text-sm">{fault.description}</td>
                     <td className="py-3 px-4 text-sm">{fault.assigned_to_name || '-'}</td>
-                    <td className="py-3 px-4 text-sm">
-                      {fault.repair_duration ? `${fault.repair_duration.toFixed(1)} saat` : '-'}
+                    <td className="py-3 px-4 text-sm font-mono">
+                      {fault.repair_duration ? formatTimeMinutesSeconds(fault.repair_duration) : '-'}
                     </td>
                     <td className="py-3 px-4 text-sm">{getStatusBadge(fault.status)}</td>
                   </tr>
