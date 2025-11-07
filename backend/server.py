@@ -86,6 +86,12 @@ class DeviceCreate(BaseModel):
     location: str
     total_operating_hours: float = 8760.0  # Default: 1 year
 
+class RepairCategory:
+    PART_REPLACEMENT = "part_replacement"
+    ADJUSTMENT = "adjustment"
+    COMPLETE_REPAIR = "complete_repair"
+    OTHER = "other"
+
 class FaultRecord(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -102,6 +108,7 @@ class FaultRecord(BaseModel):
     repair_end: Optional[datetime] = None
     repair_duration: float = 0.0
     repair_notes: str = ""
+    repair_category: Optional[str] = None  # YENI: Onarım kategorisi
     breakdown_iteration: int = 0
     status: str = FaultStatus.OPEN
     confirmed_by: Optional[str] = None
