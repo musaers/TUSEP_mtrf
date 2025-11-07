@@ -501,6 +501,13 @@ async def end_repair(fault_id: str, repair_data: FaultRecordEndRepair, current_u
     if current_user.role != UserRole.TECHNICIAN:
         raise HTTPException(status_code=403, detail="Only technicians can end repairs")
     
+    # YENI: Onarım kategorisi doğrulaması
+    if not repair_data.repair_category:
+        raise HTTPException(status_code=400, detail="Onarım kategorisi seçilmelidir")
+    
+    if len(repair_data.repair_notes) < 20:
+        raise HTTPException(status_code=400, detail="Onarım notları en az 20 karakter olmalıdır")
+    
     fault = await db.fault_records.find_one({"id": fault_id}, {"_id": 0})
     if not fault:
         raise HTTPException(status_code=404, detail="Fault not found")
@@ -523,7 +530,8 @@ async def end_repair(fault_id: str, repair_data: FaultRecordEndRepair, current_u
         {"$set": {
             "repair_end": repair_end.isoformat(),
             "repair_duration": repair_duration,
-            "repair_notes": repair_data.repair_notes
+            "repair_notes": repair_data.repair_notes,
+            "repair_category": repair_data.repair_category  # YENI
         }}
     )
     
