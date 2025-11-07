@@ -7,6 +7,7 @@ import { Button } from '../components/ui/button';
 import { toast } from 'sonner';
 import { ArrowLeft, Activity, AlertCircle, Clock, TrendingUp } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { formatTimeMinutesSeconds } from '../utils/timeFormat';
 
 const DeviceDetails = () => {
   const { deviceId } = useParams();
