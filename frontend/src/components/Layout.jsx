@@ -19,7 +19,9 @@ const Layout = () => {
     { path: '/', label: 'Gösterge Paneli', icon: LayoutDashboard, roles: ['health_staff', 'technician', 'manager', 'quality'] },
     { path: '/devices', label: 'Cihazlar', icon: Activity, roles: ['health_staff', 'technician', 'manager', 'quality'] },
     { path: '/faults', label: 'Arızalar', icon: AlertCircle, roles: ['health_staff', 'technician', 'manager', 'quality'] },
+    { path: '/transfers', label: 'Transferler', icon: ArrowRightLeft, roles: ['health_staff', 'technician', 'manager', 'quality'] },
     { path: '/reports', label: 'Raporlar', icon: FileText, roles: ['manager', 'quality'] },
+    { path: '/quality-dashboard', label: 'Kalite Dashboard', icon: BarChart3, roles: ['quality'] },
     { path: '/users', label: 'Kullanıcılar', icon: Users, roles: ['manager', 'quality'] },
   ];
 
