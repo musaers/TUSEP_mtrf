@@ -82,7 +82,6 @@ class UserLogin(BaseModel):
 class DeviceResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: str
-    code: str
     type: str
     location: str
     total_failures: int = 0
@@ -94,7 +93,6 @@ class DeviceResponse(BaseModel):
     created_at: datetime
 
 class DeviceCreate(BaseModel):
-    code: str
     type: str
     location: str
     total_operating_hours: float = 8760.0
