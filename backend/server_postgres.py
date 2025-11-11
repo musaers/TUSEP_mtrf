@@ -312,8 +312,24 @@ def create_device(device_data: DeviceCreate, current_user: User = Depends(get_cu
     return device
 
 @api_router.get("/devices", response_model=List[DeviceResponse])
-def get_devices(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    devices = db.query(Device).all()
+def get_devices(
+    device_id: Optional[str] = None,
+    type: Optional[str] = None,
+    location: Optional[str] = None,
+    current_user: User = Depends(get_current_user), 
+    db: Session = Depends(get_db)
+):
+    query = db.query(Device)
+    
+    # Apply filters
+    if device_id:
+        query = query.filter(Device.id.ilike(f"%{device_id}%"))
+    if type:
+        query = query.filter(Device.type.ilike(f"%{type}%"))
+    if location:
+        query = query.filter(Device.location.ilike(f"%{location}%"))
+    
+    devices = query.all()
     return devices
 
 @api_router.get("/devices/{device_id}", response_model=DeviceResponse)
