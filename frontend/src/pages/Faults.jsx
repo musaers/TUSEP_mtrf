@@ -170,7 +170,7 @@ const Faults = () => {
                   <tr key={fault.id} className="border-b hover:bg-gray-50" data-testid={`fault-row-${fault.id}`}>
                     <td className="py-3 px-4">
                       <div>
-                        <div className="font-medium text-gray-900">{fault.device_code}</div>
+                        <div className="font-medium text-gray-900">ID: {fault.device_id}</div>
                         <div className="text-sm text-gray-600">{fault.device_type}</div>
                       </div>
                     </td>
