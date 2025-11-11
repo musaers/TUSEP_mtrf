@@ -35,24 +35,49 @@ const Devices = () => {
   }, []);
 
   useEffect(() => {
-    const filtered = devices.filter(device =>
-      device.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      device.type.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      device.location.toLowerCase().includes(searchTerm.toLowerCase())
-    );
-    setFilteredDevices(filtered);
-  }, [searchTerm, devices]);
+    applyFilters();
+  }, [filters, devices]);
 
   const fetchDevices = async () => {
     try {
       const response = await axios.get(`${API}/devices`);
       setDevices(response.data);
       setFilteredDevices(response.data);
+      
+      // Extract unique types and locations
+      const types = [...new Set(response.data.map(d => d.type))];
+      const locs = [...new Set(response.data.map(d => d.location))];
+      setDeviceTypes(types);
+      setLocations(locs);
     } catch (error) {
       toast.error('Cihazlar yüklenemedi');
     } finally {
       setLoading(false);
     }
+  };
+
+  const applyFilters = () => {
+    let filtered = [...devices];
+    
+    if (filters.device_id) {
+      filtered = filtered.filter(d => d.id.toLowerCase().includes(filters.device_id.toLowerCase()));
+    }
+    if (filters.type) {
+      filtered = filtered.filter(d => d.type === filters.type);
+    }
+    if (filters.location) {
+      filtered = filtered.filter(d => d.location === filters.location);
+    }
+    
+    setFilteredDevices(filtered);
+  };
+
+  const resetFilters = () => {
+    setFilters({
+      device_id: '',
+      type: '',
+      location: ''
+    });
   };
 
   const handleAddDevice = async (e) => {
