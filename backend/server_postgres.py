@@ -298,14 +298,8 @@ def create_device(device_data: DeviceCreate, current_user: User = Depends(get_cu
     if current_user.role not in [UserRole.MANAGER, UserRole.TECHNICIAN]:
         raise HTTPException(status_code=403, detail="Not authorized")
     
-    # Check if code already exists
-    existing = db.query(Device).filter(Device.code == device_data.code).first()
-    if existing:
-        raise HTTPException(status_code=400, detail="Device code already exists")
-    
     device = Device(
         id=str(uuid.uuid4()),
-        code=device_data.code,
         type=device_data.type,
         location=device_data.location,
         total_operating_hours=device_data.total_operating_hours
