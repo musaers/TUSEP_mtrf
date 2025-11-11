@@ -251,12 +251,12 @@ const Devices = () => {
             key={device.id}
             className="metric-card cursor-pointer hover:shadow-lg"
             onClick={() => navigate(`/devices/${device.id}`)}
-            data-testid={`device-card-${device.code}`}
+            data-testid={`device-card-${device.id}`}
           >
             <CardHeader>
               <div className="flex items-start justify-between">
                 <div>
-                  <CardTitle className="text-lg">{device.code}</CardTitle>
+                  <CardTitle className="text-lg">ID: {device.id}</CardTitle>
                   <p className="text-sm text-gray-600 mt-1">{device.type}</p>
                 </div>
                 <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
