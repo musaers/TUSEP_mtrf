@@ -15,26 +15,69 @@ const CreateFault = () => {
   const { user } = useContext(AuthContext);
   const navigate = useNavigate();
   const [devices, setDevices] = useState([]);
+  const [allDevices, setAllDevices] = useState([]);
+  const [deviceTypes, setDeviceTypes] = useState([]);
+  const [locations, setLocations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [formData, setFormData] = useState({
     device_id: '',
     description: ''
   });
+  const [filters, setFilters] = useState({
+    device_id: '',
+    type: '',
+    location: ''
+  });
 
   useEffect(() => {
     fetchDevices();
   }, []);
 
+  useEffect(() => {
+    applyFilters();
+  }, [filters, allDevices]);
+
   const fetchDevices = async () => {
     try {
       const response = await axios.get(`${API}/devices`);
+      setAllDevices(response.data);
       setDevices(response.data);
+      
+      // Extract unique types and locations
+      const types = [...new Set(response.data.map(d => d.type))];
+      const locs = [...new Set(response.data.map(d => d.location))];
+      setDeviceTypes(types);
+      setLocations(locs);
     } catch (error) {
       toast.error('Cihazlar yüklenemedi');
     } finally {
       setLoading(false);
     }
+  };
+
+  const applyFilters = () => {
+    let filtered = [...allDevices];
+    
+    if (filters.device_id) {
+      filtered = filtered.filter(d => d.id.toLowerCase().includes(filters.device_id.toLowerCase()));
+    }
+    if (filters.type) {
+      filtered = filtered.filter(d => d.type === filters.type);
+    }
+    if (filters.location) {
+      filtered = filtered.filter(d => d.location === filters.location);
+    }
+    
+    setDevices(filtered);
+  };
+
+  const resetFilters = () => {
+    setFilters({
+      device_id: '',
+      type: '',
+      location: ''
+    });
   };
 
   const handleSubmit = async (e) => {
