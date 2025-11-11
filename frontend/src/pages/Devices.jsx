@@ -170,17 +170,79 @@ const Devices = () => {
         )}
       </div>
 
-      {/* Search */}
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-        <Input
-          placeholder="Cihaz kodu, tipi veya konum ile ara..."
-          className="pl-10"
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          data-testid="search-devices-input"
-        />
-      </div>
+      {/* Filters */}
+      <Card>
+        <CardContent className="pt-6">
+          <div className="space-y-4">
+            <div className="flex justify-between items-center">
+              <h3 className="font-semibold text-gray-900">Filtreler</h3>
+              <Button type="button" variant="ghost" size="sm" onClick={resetFilters}>
+                Temizle
+              </Button>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="space-y-2">
+                <Label>Cihaz ID</Label>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                  <Input
+                    placeholder="ID ara..."
+                    className="pl-9"
+                    value={filters.device_id}
+                    onChange={(e) => setFilters({ ...filters, device_id: e.target.value })}
+                    data-testid="filter-device-id"
+                  />
+                </div>
+              </div>
+              
+              <div className="space-y-2">
+                <Label>Cihaz Tipi</Label>
+                <Select
+                  value={filters.type}
+                  onValueChange={(value) => setFilters({ ...filters, type: value })}
+                >
+                  <SelectTrigger data-testid="filter-type">
+                    <SelectValue placeholder="Tümü" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">Tümü</SelectItem>
+                    {deviceTypes.map((type) => (
+                      <SelectItem key={type} value={type}>
+                        {type}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              <div className="space-y-2">
+                <Label>Lokasyon</Label>
+                <Select
+                  value={filters.location}
+                  onValueChange={(value) => setFilters({ ...filters, location: value })}
+                >
+                  <SelectTrigger data-testid="filter-location">
+                    <SelectValue placeholder="Tümü" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">Tümü</SelectItem>
+                    {locations.map((loc) => (
+                      <SelectItem key={loc} value={loc}>
+                        {loc}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            
+            <div className="text-sm text-gray-600">
+              {filteredDevices.length} cihaz gösteriliyor {devices.length !== filteredDevices.length && `(${devices.length} toplam)`}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Devices Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
