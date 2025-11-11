@@ -677,7 +677,6 @@ def create_transfer(transfer_data: TransferCreate, current_user: User = Depends(
     transfer = EquipmentTransfer(
         id=str(uuid.uuid4()),
         device_id=transfer_data.device_id,
-        device_code=device.code,
         device_type=device.type,
         from_location=device.location,
         to_location=transfer_data.to_location,
