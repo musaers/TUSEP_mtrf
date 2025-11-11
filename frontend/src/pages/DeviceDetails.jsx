@@ -74,7 +74,7 @@ const DeviceDetails = () => {
           Geri
         </Button>
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">{device.code}</h1>
+          <h1 className="text-3xl font-bold text-gray-900">Cihaz ID: {device.id}</h1>
           <p className="text-gray-600">{device.type} - {device.location}</p>
         </div>
       </div>
