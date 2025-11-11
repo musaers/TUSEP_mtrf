@@ -15,14 +15,19 @@ const Devices = () => {
   const navigate = useNavigate();
   const [devices, setDevices] = useState([]);
   const [filteredDevices, setFilteredDevices] = useState([]);
+  const [deviceTypes, setDeviceTypes] = useState([]);
+  const [locations, setLocations] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState('');
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [newDevice, setNewDevice] = useState({
-    code: '',
     type: '',
     location: '',
     total_operating_hours: 8760
+  });
+  const [filters, setFilters] = useState({
+    device_id: '',
+    type: '',
+    location: ''
   });
 
   useEffect(() => {
