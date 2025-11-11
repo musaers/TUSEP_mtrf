@@ -95,7 +95,6 @@ class EquipmentTransfer(Base):
     
     id = Column(String(50), primary_key=True)
     device_id = Column(String(50), ForeignKey('devices.id'), nullable=False)
-    device_code = Column(String(100))
     device_type = Column(String(255))
     from_location = Column(String(255), nullable=False)
     to_location = Column(String(255), nullable=False)
