@@ -86,7 +86,7 @@ const Devices = () => {
       await axios.post(`${API}/devices`, newDevice);
       toast.success('Cihaz başarıyla eklendi');
       setShowAddDialog(false);
-      setNewDevice({ code: '', type: '', location: '', total_operating_hours: 8760 });
+      setNewDevice({ type: '', location: '', total_operating_hours: 8760 });
       fetchDevices();
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Cihaz eklenemedi');
