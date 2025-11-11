@@ -71,7 +71,6 @@ class FaultRecord(Base):
     created_by_name = Column(String(255))
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     device_id = Column(String(50), ForeignKey('devices.id'), nullable=False)
-    device_code = Column(String(100))
     device_type = Column(String(255))
     description = Column(Text, nullable=False)
     assigned_to = Column(String(50), ForeignKey('users.id'))
