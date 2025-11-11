@@ -104,7 +104,6 @@ class FaultRecordResponse(BaseModel):
     created_by_name: str = ""
     created_at: datetime
     device_id: str
-    device_code: str = ""
     device_type: str = ""
     description: str
     assigned_to: Optional[str] = None
