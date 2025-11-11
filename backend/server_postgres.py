@@ -18,7 +18,7 @@ import traceback
 
 # Import database models
 from database import get_db, User, Device, FaultRecord, EquipmentTransfer, Log
-from excel_service import ExcelReportService
+from excel_service_postgres import ExcelReportService
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
