@@ -129,8 +129,73 @@ const CreateFault = () => {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-6">
+            {/* Filter Section */}
+            <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-3">
+              <div className="flex justify-between items-center">
+                <h4 className="font-semibold text-gray-900">Cihaz Filtrele</h4>
+                <Button type="button" variant="ghost" size="sm" onClick={resetFilters}>
+                  Temizle
+                </Button>
+              </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs">Cihaz ID</Label>
+                  <Input
+                    placeholder="ID ara..."
+                    value={filters.device_id}
+                    onChange={(e) => setFilters({ ...filters, device_id: e.target.value })}
+                  />
+                </div>
+                
+                <div className="space-y-1">
+                  <Label className="text-xs">Cihaz Tipi</Label>
+                  <Select
+                    value={filters.type}
+                    onValueChange={(value) => setFilters({ ...filters, type: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Tümü" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">Tümü</SelectItem>
+                      {deviceTypes.map((type) => (
+                        <SelectItem key={type} value={type}>
+                          {type}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                
+                <div className="space-y-1">
+                  <Label className="text-xs">Lokasyon</Label>
+                  <Select
+                    value={filters.location}
+                    onValueChange={(value) => setFilters({ ...filters, location: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Tümü" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">Tümü</SelectItem>
+                      {locations.map((loc) => (
+                        <SelectItem key={loc} value={loc}>
+                          {loc}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              
+              <p className="text-xs text-gray-600">
+                {devices.length} cihaz bulundu {allDevices.length !== devices.length && `(${allDevices.length} toplam)`}
+              </p>
+            </div>
+
             <div className="space-y-2">
-              <Label htmlFor="device">Cihaz *</Label>
+              <Label htmlFor="device">Cihaz Seç *</Label>
               <Select
                 value={formData.device_id}
                 onValueChange={(value) => setFormData({ ...formData, device_id: value })}
@@ -142,12 +207,12 @@ const CreateFault = () => {
                 <SelectContent>
                   {devices.map((device) => (
                     <SelectItem key={device.id} value={device.id}>
-                      {device.code} - {device.type} ({device.location})
+                      {device.id} - {device.type} ({device.location})
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-              <p className="text-xs text-gray-600">Arızalı cihazın kodunu barkod/QR ile okutabilir veya listeden seçebilirsiniz</p>
+              <p className="text-xs text-gray-600">Yukarıdaki filtrelerle cihazı bulabilir ve seçebilirsiniz</p>
             </div>
 
             <div className="space-y-2">
