@@ -129,17 +129,6 @@ const Devices = () => {
               </DialogHeader>
               <form onSubmit={handleAddDevice} className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="code">Cihaz Kodu</Label>
-                  <Input
-                    id="code"
-                    data-testid="device-code-input"
-                    placeholder="örn: CIH-001"
-                    value={newDevice.code}
-                    onChange={(e) => setNewDevice({ ...newDevice, code: e.target.value })}
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
                   <Label htmlFor="type">Cihaz Tipi</Label>
                   <Input
                     id="type"
