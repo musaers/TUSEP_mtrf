@@ -133,7 +133,6 @@ class TransferResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: str
     device_id: str
-    device_code: str = ""
     device_type: str = ""
     from_location: str
     to_location: str
