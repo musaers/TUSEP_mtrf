@@ -361,7 +361,6 @@ def create_fault(fault_data: FaultRecordCreate, current_user: User = Depends(get
         created_by=current_user.id,
         created_by_name=current_user.name,
         device_id=fault_data.device_id,
-        device_code=device.code,
         device_type=device.type,
         description=fault_data.description,
         breakdown_iteration=device.total_failures
