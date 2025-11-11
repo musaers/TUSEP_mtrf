@@ -39,7 +39,6 @@ class Device(Base):
     __tablename__ = "devices"
     
     id = Column(String(50), primary_key=True)
-    code = Column(String(100), unique=True, nullable=False)
     type = Column(String(255), nullable=False)
     location = Column(String(255), nullable=False)
     total_failures = Column(Integer, default=0)
