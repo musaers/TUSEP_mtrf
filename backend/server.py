@@ -549,7 +549,6 @@ def get_dashboard_stats(current_user: User = Depends(get_current_user), db: Sess
     most_reliable = [
         {
             "id": d.id,
-            "code": d.code,
             "type": d.type,
             "location": d.location,
             "availability": d.availability,
@@ -559,7 +558,6 @@ def get_dashboard_stats(current_user: User = Depends(get_current_user), db: Sess
     least_reliable = [
         {
             "id": d.id,
-            "code": d.code,
             "type": d.type,
             "location": d.location,
             "availability": d.availability,
