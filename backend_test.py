@@ -684,6 +684,7 @@ class BackendTester:
         # Run all tests
         self.test_device_listing_without_filters()
         self.test_device_creation_without_code()
+        self.test_individual_device_retrieval()
         self.test_device_filtering()
         self.test_fault_creation_without_device_code()
         self.test_transfer_creation_without_device_code()
