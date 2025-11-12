@@ -1,8 +1,8 @@
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.responses import StreamingResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
-from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
 from pathlib import Path
@@ -12,15 +12,16 @@ import uuid
 from datetime import datetime, timezone, timedelta
 from passlib.context import CryptContext
 from jose import JWTError, jwt
+from sqlalchemy.orm import Session
+from sqlalchemy import func, and_, or_
 import traceback
+
+# Import database models
+from database import get_db, User, Device, FaultRecord, EquipmentTransfer, Log
+from excel_service_postgres import ExcelReportService
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
-
-# MongoDB connection
-mongo_url = os.environ['MONGO_URL']
-client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ['DB_NAME']]
 
 # Security
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -33,7 +34,7 @@ security = HTTPBearer()
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
 
-# ===== MODELS =====
+# ===== PYDANTIC MODELS =====
 
 class UserRole:
     HEALTH_STAFF = "health_staff"
@@ -46,15 +47,27 @@ class FaultStatus:
     IN_PROGRESS = "in_progress"
     CLOSED = "closed"
 
-class User(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+class RepairCategory:
+    PART_REPLACEMENT = "part_replacement"
+    ADJUSTMENT = "adjustment"
+    COMPLETE_REPAIR = "complete_repair"
+    OTHER = "other"
+
+class TransferStatus:
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    COMPLETED = "completed"
+
+class UserResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
     name: str
     email: EmailStr
     role: str
     successful_repairs: int = 0
     failed_repairs: int = 0
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime
 
 class UserCreate(BaseModel):
     name: str
@@ -66,10 +79,9 @@ class UserLogin(BaseModel):
     email: EmailStr
     password: str
 
-class Device(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    code: str
+class DeviceResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
     type: str
     location: str
     total_failures: int = 0
@@ -78,28 +90,20 @@ class Device(BaseModel):
     mtbf: float = 0.0
     mttr: float = 0.0
     availability: float = 100.0
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime
 
 class DeviceCreate(BaseModel):
-    code: str
     type: str
     location: str
-    total_operating_hours: float = 8760.0  # Default: 1 year
+    total_operating_hours: float = 8760.0
 
-class RepairCategory:
-    PART_REPLACEMENT = "part_replacement"
-    ADJUSTMENT = "adjustment"
-    COMPLETE_REPAIR = "complete_repair"
-    OTHER = "other"
-
-class FaultRecord(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+class FaultRecordResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
     created_by: str
     created_by_name: str = ""
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime
     device_id: str
-    device_code: str = ""
     device_type: str = ""
     description: str
     assigned_to: Optional[str] = None
@@ -108,7 +112,7 @@ class FaultRecord(BaseModel):
     repair_end: Optional[datetime] = None
     repair_duration: float = 0.0
     repair_notes: str = ""
-    repair_category: Optional[str] = None  # YENI: Onarım kategorisi
+    repair_category: Optional[str] = None
     breakdown_iteration: int = 0
     status: str = FaultStatus.OPEN
     confirmed_by: Optional[str] = None
@@ -121,44 +125,20 @@ class FaultRecordCreate(BaseModel):
 class FaultRecordAssign(BaseModel):
     assigned_to: str
 
-class FaultRecordUpdate(BaseModel):
-    repair_notes: Optional[str] = None
-    status: Optional[str] = None
-
-class FaultRecordStartRepair(BaseModel):
-    pass
-
 class FaultRecordEndRepair(BaseModel):
     repair_notes: str
-    repair_category: str  # YENI: Zorunlu onarım kategorisi
+    repair_category: str
 
-class Log(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    record_id: str
-    event: str
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    user_id: Optional[str] = None
-    user_name: Optional[str] = None
-
-# YENI: Transfer Yönetimi Modelleri
-class TransferStatus:
-    PENDING = "pending"  # Kalite onayı bekliyor
-    APPROVED = "approved"  # Onaylandı
-    REJECTED = "rejected"  # Reddedildi
-    COMPLETED = "completed"  # Transfer tamamlandı
-
-class EquipmentTransfer(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+class TransferResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
     device_id: str
-    device_code: str = ""
     device_type: str = ""
     from_location: str
     to_location: str
     requested_by: str
     requested_by_name: str = ""
-    requested_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    requested_at: datetime
     reason: str
     status: str = TransferStatus.PENDING
     approved_by: Optional[str] = None
@@ -172,9 +152,6 @@ class TransferCreate(BaseModel):
     to_location: str
     reason: str
 
-class TransferApprove(BaseModel):
-    pass
-
 class TransferReject(BaseModel):
     rejection_reason: str
 
@@ -187,7 +164,7 @@ def create_access_token(data: dict):
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
-async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security), db: Session = Depends(get_db)):
     try:
         token = credentials.credentials
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
@@ -197,32 +174,33 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid credentials")
     
-    user_doc = await db.users.find_one({"id": user_id}, {"_id": 0})
-    if user_doc is None:
+    user = db.query(User).filter(User.id == user_id).first()
+    if user is None:
         raise HTTPException(status_code=401, detail="User not found")
     
-    # Convert ISO strings to datetime
-    if isinstance(user_doc.get('created_at'), str):
-        user_doc['created_at'] = datetime.fromisoformat(user_doc['created_at'])
-    
-    return User(**user_doc)
+    return user
 
 # ===== HELPER FUNCTIONS =====
 
-async def create_log(record_id: str, event: str, user_id: str = None, user_name: str = None):
-    log = Log(record_id=record_id, event=event, user_id=user_id, user_name=user_name)
-    log_dict = log.model_dump()
-    log_dict['timestamp'] = log_dict['timestamp'].isoformat()
-    await db.logs.insert_one(log_dict)
+def create_log(db: Session, record_id: str, event: str, user_id: str = None, user_name: str = None):
+    log = Log(
+        id=str(uuid.uuid4()),
+        record_id=record_id,
+        event=event,
+        user_id=user_id,
+        user_name=user_name
+    )
+    db.add(log)
+    db.commit()
 
-async def calculate_device_metrics(device_id: str):
-    device = await db.devices.find_one({"id": device_id}, {"_id": 0})
+def calculate_device_metrics(db: Session, device_id: str):
+    device = db.query(Device).filter(Device.id == device_id).first()
     if not device:
         return
     
-    total_failures = device.get('total_failures', 0)
-    total_operating_hours = device.get('total_operating_hours', 0.0)
-    total_repair_hours = device.get('total_repair_hours', 0.0)
+    total_failures = device.total_failures
+    total_operating_hours = device.total_operating_hours
+    total_repair_hours = device.total_repair_hours
     
     if total_failures > 0:
         mttr = total_repair_hours / total_failures
@@ -240,17 +218,17 @@ async def calculate_device_metrics(device_id: str):
         mttr = 0.0
         availability = 100.0
     
-    await db.devices.update_one(
-        {"id": device_id},
-        {"$set": {"mtbf": mtbf, "mttr": mttr, "availability": availability}}
-    )
+    device.mtbf = mtbf
+    device.mttr = mttr
+    device.availability = availability
+    db.commit()
 
 # ===== AUTH ROUTES =====
 
-@api_router.post("/auth/register", response_model=User)
-async def register(user_data: UserCreate):
+@api_router.post("/auth/register", response_model=UserResponse)
+def register(user_data: UserCreate, db: Session = Depends(get_db)):
     # Check if email already exists
-    existing = await db.users.find_one({"email": user_data.email})
+    existing = db.query(User).filter(User.email == user_data.email).first()
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
     
@@ -259,353 +237,335 @@ async def register(user_data: UserCreate):
     
     # Create user
     user = User(
+        id=str(uuid.uuid4()),
         name=user_data.name,
         email=user_data.email,
+        password=hashed_password,
         role=user_data.role
     )
     
-    user_dict = user.model_dump()
-    user_dict['password'] = hashed_password
-    user_dict['created_at'] = user_dict['created_at'].isoformat()
+    db.add(user)
+    db.commit()
+    db.refresh(user)
     
-    await db.users.insert_one(user_dict)
     return user
 
 @api_router.post("/auth/login")
-async def login(credentials: UserLogin):
-    user_doc = await db.users.find_one({"email": credentials.email}, {"_id": 0})
-    if not user_doc:
+def login(credentials: UserLogin, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.email == credentials.email).first()
+    if not user:
         raise HTTPException(status_code=401, detail="Invalid credentials")
     
-    if not pwd_context.verify(credentials.password, user_doc['password']):
+    if not pwd_context.verify(credentials.password, user.password):
         raise HTTPException(status_code=401, detail="Invalid credentials")
     
-    access_token = create_access_token(data={"sub": user_doc['id'], "email": user_doc['email']})
+    access_token = create_access_token(data={"sub": user.id, "email": user.email})
     
     return {
         "access_token": access_token,
         "token_type": "bearer",
         "user": {
-            "id": user_doc['id'],
-            "name": user_doc['name'],
-            "email": user_doc['email'],
-            "role": user_doc['role']
+            "id": user.id,
+            "name": user.name,
+            "email": user.email,
+            "role": user.role
         }
     }
 
-@api_router.get("/auth/me", response_model=User)
-async def get_me(current_user: User = Depends(get_current_user)):
+@api_router.get("/auth/me", response_model=UserResponse)
+def get_me(current_user: User = Depends(get_current_user)):
     return current_user
 
 # ===== USERS ROUTES =====
 
-@api_router.get("/users", response_model=List[User])
-async def get_users(current_user: User = Depends(get_current_user)):
+@api_router.get("/users", response_model=List[UserResponse])
+def get_users(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     if current_user.role not in [UserRole.MANAGER, UserRole.QUALITY]:
         raise HTTPException(status_code=403, detail="Not authorized")
     
-    users = await db.users.find({}, {"_id": 0, "password": 0}).to_list(1000)
-    for user in users:
-        if isinstance(user.get('created_at'), str):
-            user['created_at'] = datetime.fromisoformat(user['created_at'])
+    users = db.query(User).all()
     return users
 
-@api_router.get("/users/technicians", response_model=List[User])
-async def get_technicians(current_user: User = Depends(get_current_user)):
-    users = await db.users.find({"role": UserRole.TECHNICIAN}, {"_id": 0, "password": 0}).to_list(1000)
-    for user in users:
-        if isinstance(user.get('created_at'), str):
-            user['created_at'] = datetime.fromisoformat(user['created_at'])
+@api_router.get("/users/technicians", response_model=List[UserResponse])
+def get_technicians(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    users = db.query(User).filter(User.role == UserRole.TECHNICIAN).all()
     return users
 
 # ===== DEVICES ROUTES =====
 
-@api_router.post("/devices", response_model=Device)
-async def create_device(device_data: DeviceCreate, current_user: User = Depends(get_current_user)):
+@api_router.post("/devices", response_model=DeviceResponse)
+def create_device(device_data: DeviceCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     if current_user.role not in [UserRole.MANAGER, UserRole.TECHNICIAN]:
         raise HTTPException(status_code=403, detail="Not authorized")
     
-    # Check if code already exists
-    existing = await db.devices.find_one({"code": device_data.code})
-    if existing:
-        raise HTTPException(status_code=400, detail="Device code already exists")
+    device = Device(
+        id=str(uuid.uuid4()),
+        type=device_data.type,
+        location=device_data.location,
+        total_operating_hours=device_data.total_operating_hours
+    )
     
-    device = Device(**device_data.model_dump())
-    device_dict = device.model_dump()
-    device_dict['created_at'] = device_dict['created_at'].isoformat()
+    db.add(device)
+    db.commit()
+    db.refresh(device)
     
-    await db.devices.insert_one(device_dict)
     return device
 
-@api_router.get("/devices", response_model=List[Device])
-async def get_devices(current_user: User = Depends(get_current_user)):
-    devices = await db.devices.find({}, {"_id": 0}).to_list(1000)
-    for device in devices:
-        if isinstance(device.get('created_at'), str):
-            device['created_at'] = datetime.fromisoformat(device['created_at'])
+@api_router.get("/devices", response_model=List[DeviceResponse])
+def get_devices(
+    device_id: Optional[str] = None,
+    type: Optional[str] = None,
+    location: Optional[str] = None,
+    current_user: User = Depends(get_current_user), 
+    db: Session = Depends(get_db)
+):
+    query = db.query(Device)
+    
+    # Apply filters
+    if device_id:
+        query = query.filter(Device.id.ilike(f"%{device_id}%"))
+    if type:
+        query = query.filter(Device.type.ilike(f"%{type}%"))
+    if location:
+        query = query.filter(Device.location.ilike(f"%{location}%"))
+    
+    devices = query.all()
     return devices
 
-@api_router.get("/devices/{device_id}", response_model=Device)
-async def get_device(device_id: str, current_user: User = Depends(get_current_user)):
-    device = await db.devices.find_one({"id": device_id}, {"_id": 0})
+@api_router.get("/devices/{device_id}", response_model=DeviceResponse)
+def get_device(device_id: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    device = db.query(Device).filter(Device.id == device_id).first()
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
-    
-    if isinstance(device.get('created_at'), str):
-        device['created_at'] = datetime.fromisoformat(device['created_at'])
     return device
 
-@api_router.get("/devices/{device_id}/faults")
-async def get_device_faults(device_id: str, current_user: User = Depends(get_current_user)):
-    faults = await db.fault_records.find({"device_id": device_id}, {"_id": 0}).sort("created_at", -1).to_list(1000)
-    for fault in faults:
-        for field in ['created_at', 'repair_start', 'repair_end', 'confirmed_at']:
-            if isinstance(fault.get(field), str):
-                fault[field] = datetime.fromisoformat(fault[field])
+@api_router.get("/devices/{device_id}/faults", response_model=List[FaultRecordResponse])
+def get_device_faults(device_id: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    faults = db.query(FaultRecord).filter(FaultRecord.device_id == device_id).order_by(FaultRecord.created_at.desc()).all()
     return faults
 
 # ===== FAULT RECORDS ROUTES =====
 
-@api_router.post("/faults", response_model=FaultRecord)
-async def create_fault(fault_data: FaultRecordCreate, current_user: User = Depends(get_current_user)):
+@api_router.post("/faults", response_model=FaultRecordResponse)
+def create_fault(fault_data: FaultRecordCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     # Get device
-    device = await db.devices.find_one({"id": fault_data.device_id}, {"_id": 0})
+    device = db.query(Device).filter(Device.id == fault_data.device_id).first()
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
     
     # Increment device failure count
-    new_failure_count = device.get('total_failures', 0) + 1
+    device.total_failures += 1
     
     fault = FaultRecord(
+        id=str(uuid.uuid4()),
         created_by=current_user.id,
         created_by_name=current_user.name,
         device_id=fault_data.device_id,
-        device_code=device['code'],
-        device_type=device['type'],
+        device_type=device.type,
         description=fault_data.description,
-        breakdown_iteration=new_failure_count
+        breakdown_iteration=device.total_failures
     )
     
-    fault_dict = fault.model_dump()
-    fault_dict['created_at'] = fault_dict['created_at'].isoformat()
-    
-    await db.fault_records.insert_one(fault_dict)
-    
-    # Update device
-    await db.devices.update_one(
-        {"id": fault_data.device_id},
-        {"$set": {"total_failures": new_failure_count}}
-    )
+    db.add(fault)
+    db.commit()
+    db.refresh(fault)
     
     # Create log
-    await create_log(fault.id, f"Arıza kaydı oluşturuldu: {fault_data.description}", current_user.id, current_user.name)
+    create_log(db, fault.id, f"Arıza kaydı oluşturuldu: {fault_data.description}", current_user.id, current_user.name)
     
     return fault
 
-@api_router.get("/faults", response_model=List[FaultRecord])
-async def get_faults(status: Optional[str] = None, current_user: User = Depends(get_current_user)):
-    query = {}
+@api_router.get("/faults", response_model=List[FaultRecordResponse])
+def get_faults(status: Optional[str] = None, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    query = db.query(FaultRecord)
+    
     if status:
-        query['status'] = status
+        query = query.filter(FaultRecord.status == status)
     
     # Role-based filtering
     if current_user.role == UserRole.TECHNICIAN:
-        query['assigned_to'] = current_user.id
+        query = query.filter(FaultRecord.assigned_to == current_user.id)
     elif current_user.role == UserRole.HEALTH_STAFF:
-        # Can see their own created faults
-        query['created_by'] = current_user.id
+        query = query.filter(FaultRecord.created_by == current_user.id)
     
-    faults = await db.fault_records.find(query, {"_id": 0}).sort("created_at", -1).to_list(1000)
-    for fault in faults:
-        for field in ['created_at', 'repair_start', 'repair_end', 'confirmed_at']:
-            if isinstance(fault.get(field), str):
-                fault[field] = datetime.fromisoformat(fault[field])
+    faults = query.order_by(FaultRecord.created_at.desc()).all()
     return faults
 
-@api_router.get("/faults/all")
-async def get_all_faults(current_user: User = Depends(get_current_user)):
+@api_router.get("/faults/all", response_model=List[FaultRecordResponse])
+def get_all_faults(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     if current_user.role not in [UserRole.MANAGER, UserRole.QUALITY]:
         raise HTTPException(status_code=403, detail="Not authorized")
     
-    faults = await db.fault_records.find({}, {"_id": 0}).sort("created_at", -1).to_list(1000)
-    for fault in faults:
-        for field in ['created_at', 'repair_start', 'repair_end', 'confirmed_at']:
-            if isinstance(fault.get(field), str):
-                fault[field] = datetime.fromisoformat(fault[field])
+    faults = db.query(FaultRecord).order_by(FaultRecord.created_at.desc()).all()
     return faults
 
-@api_router.get("/faults/{fault_id}", response_model=FaultRecord)
-async def get_fault(fault_id: str, current_user: User = Depends(get_current_user)):
-    fault = await db.fault_records.find_one({"id": fault_id}, {"_id": 0})
+@api_router.get("/faults/{fault_id}", response_model=FaultRecordResponse)
+def get_fault(fault_id: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    fault = db.query(FaultRecord).filter(FaultRecord.id == fault_id).first()
     if not fault:
         raise HTTPException(status_code=404, detail="Fault not found")
-    
-    for field in ['created_at', 'repair_start', 'repair_end', 'confirmed_at']:
-        if isinstance(fault.get(field), str):
-            fault[field] = datetime.fromisoformat(fault[field])
     return fault
 
 @api_router.post("/faults/{fault_id}/assign")
-async def assign_fault(fault_id: str, assign_data: FaultRecordAssign, current_user: User = Depends(get_current_user)):
+def assign_fault(fault_id: str, assign_data: FaultRecordAssign, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     if current_user.role != UserRole.MANAGER:
         raise HTTPException(status_code=403, detail="Only managers can assign faults")
     
-    fault = await db.fault_records.find_one({"id": fault_id}, {"_id": 0})
+    fault = db.query(FaultRecord).filter(FaultRecord.id == fault_id).first()
     if not fault:
         raise HTTPException(status_code=404, detail="Fault not found")
     
-    technician = await db.users.find_one({"id": assign_data.assigned_to}, {"_id": 0})
-    if not technician or technician['role'] != UserRole.TECHNICIAN:
+    technician = db.query(User).filter(User.id == assign_data.assigned_to).first()
+    if not technician or technician.role != UserRole.TECHNICIAN:
         raise HTTPException(status_code=400, detail="Invalid technician")
     
-    await db.fault_records.update_one(
-        {"id": fault_id},
-        {"$set": {
-            "assigned_to": assign_data.assigned_to,
-            "assigned_to_name": technician['name'],
-            "status": FaultStatus.IN_PROGRESS
-        }}
-    )
+    fault.assigned_to = assign_data.assigned_to
+    fault.assigned_to_name = technician.name
+    fault.status = FaultStatus.IN_PROGRESS
+    db.commit()
     
-    await create_log(fault_id, f"Teknisyene atandı: {technician['name']}", current_user.id, current_user.name)
+    create_log(db, fault_id, f"Teknisyene atandı: {technician.name}", current_user.id, current_user.name)
     
     return {"message": "Fault assigned successfully"}
 
 @api_router.post("/faults/{fault_id}/start-repair")
-async def start_repair(fault_id: str, current_user: User = Depends(get_current_user)):
+def start_repair(fault_id: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     if current_user.role != UserRole.TECHNICIAN:
         raise HTTPException(status_code=403, detail="Only technicians can start repairs")
     
-    fault = await db.fault_records.find_one({"id": fault_id}, {"_id": 0})
+    fault = db.query(FaultRecord).filter(FaultRecord.id == fault_id).first()
     if not fault:
         raise HTTPException(status_code=404, detail="Fault not found")
     
-    if fault.get('assigned_to') != current_user.id:
+    if fault.assigned_to != current_user.id:
         raise HTTPException(status_code=403, detail="Not assigned to you")
     
-    if fault.get('repair_start'):
+    if fault.repair_start:
         raise HTTPException(status_code=400, detail="Repair already started")
     
-    repair_start = datetime.now(timezone.utc)
-    await db.fault_records.update_one(
-        {"id": fault_id},
-        {"$set": {"repair_start": repair_start.isoformat()}}
-    )
+    fault.repair_start = datetime.now(timezone.utc)
+    db.commit()
     
-    await create_log(fault_id, "Onarım başlatıldı", current_user.id, current_user.name)
+    create_log(db, fault_id, "Onarım başlatıldı", current_user.id, current_user.name)
     
     return {"message": "Repair started"}
 
 @api_router.post("/faults/{fault_id}/end-repair")
-async def end_repair(fault_id: str, repair_data: FaultRecordEndRepair, current_user: User = Depends(get_current_user)):
+def end_repair(fault_id: str, repair_data: FaultRecordEndRepair, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     if current_user.role != UserRole.TECHNICIAN:
         raise HTTPException(status_code=403, detail="Only technicians can end repairs")
     
-    # YENI: Onarım kategorisi doğrulaması
     if not repair_data.repair_category:
         raise HTTPException(status_code=400, detail="Onarım kategorisi seçilmelidir")
     
     if len(repair_data.repair_notes) < 20:
         raise HTTPException(status_code=400, detail="Onarım notları en az 20 karakter olmalıdır")
     
-    fault = await db.fault_records.find_one({"id": fault_id}, {"_id": 0})
+    fault = db.query(FaultRecord).filter(FaultRecord.id == fault_id).first()
     if not fault:
         raise HTTPException(status_code=404, detail="Fault not found")
     
-    if fault.get('assigned_to') != current_user.id:
+    if fault.assigned_to != current_user.id:
         raise HTTPException(status_code=403, detail="Not assigned to you")
     
-    if not fault.get('repair_start'):
+    if not fault.repair_start:
         raise HTTPException(status_code=400, detail="Repair not started yet")
     
-    if fault.get('repair_end'):
+    if fault.repair_end:
         raise HTTPException(status_code=400, detail="Repair already ended")
     
     repair_end = datetime.now(timezone.utc)
-    repair_start = datetime.fromisoformat(fault['repair_start']) if isinstance(fault['repair_start'], str) else fault['repair_start']
-    repair_duration = (repair_end - repair_start).total_seconds() / 3600  # hours
+    repair_duration = (repair_end - fault.repair_start).total_seconds() / 3600
     
-    await db.fault_records.update_one(
-        {"id": fault_id},
-        {"$set": {
-            "repair_end": repair_end.isoformat(),
-            "repair_duration": repair_duration,
-            "repair_notes": repair_data.repair_notes,
-            "repair_category": repair_data.repair_category  # YENI
-        }}
-    )
+    fault.repair_end = repair_end
+    fault.repair_duration = repair_duration
+    fault.repair_notes = repair_data.repair_notes
+    fault.repair_category = repair_data.repair_category
     
     # Update device total repair hours
-    device = await db.devices.find_one({"id": fault['device_id']}, {"_id": 0})
+    device = db.query(Device).filter(Device.id == fault.device_id).first()
     if device:
-        new_repair_hours = device.get('total_repair_hours', 0.0) + repair_duration
-        await db.devices.update_one(
-            {"id": fault['device_id']},
-            {"$set": {"total_repair_hours": new_repair_hours}}
-        )
-        await calculate_device_metrics(fault['device_id'])
+        device.total_repair_hours += repair_duration
+        calculate_device_metrics(db, fault.device_id)
     
-    await create_log(fault_id, f"Onarım tamamlandı ({repair_duration:.2f} saat)", current_user.id, current_user.name)
+    db.commit()
+    
+    create_log(db, fault_id, f"Onarım tamamlandı ({repair_duration:.2f} saat)", current_user.id, current_user.name)
     
     return {"message": "Repair ended", "duration_hours": repair_duration}
 
 @api_router.post("/faults/{fault_id}/confirm")
-async def confirm_fault(fault_id: str, current_user: User = Depends(get_current_user)):
-    fault = await db.fault_records.find_one({"id": fault_id}, {"_id": 0})
+def confirm_fault(fault_id: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    fault = db.query(FaultRecord).filter(FaultRecord.id == fault_id).first()
     if not fault:
         raise HTTPException(status_code=404, detail="Fault not found")
     
-    # Health staff who created it can confirm
-    if fault.get('created_by') != current_user.id:
+    if fault.created_by != current_user.id:
         raise HTTPException(status_code=403, detail="Only the creator can confirm")
     
-    if not fault.get('repair_end'):
+    if not fault.repair_end:
         raise HTTPException(status_code=400, detail="Repair not completed yet")
     
-    if fault.get('status') == FaultStatus.CLOSED:
+    if fault.status == FaultStatus.CLOSED:
         raise HTTPException(status_code=400, detail="Already confirmed")
     
-    confirmed_at = datetime.now(timezone.utc)
-    await db.fault_records.update_one(
-        {"id": fault_id},
-        {"$set": {
-            "status": FaultStatus.CLOSED,
-            "confirmed_by": current_user.id,
-            "confirmed_at": confirmed_at.isoformat()
-        }}
-    )
+    fault.status = FaultStatus.CLOSED
+    fault.confirmed_by = current_user.id
+    fault.confirmed_at = datetime.now(timezone.utc)
     
     # Update technician stats
-    if fault.get('assigned_to'):
-        await db.users.update_one(
-            {"id": fault['assigned_to']},
-            {"$inc": {"successful_repairs": 1}}
-        )
+    if fault.assigned_to:
+        technician = db.query(User).filter(User.id == fault.assigned_to).first()
+        if technician:
+            technician.successful_repairs += 1
     
-    await create_log(fault_id, "Onarım onaylandı ve kayıt kapatıldı", current_user.id, current_user.name)
+    db.commit()
+    
+    create_log(db, fault_id, "Onarım onaylandı ve kayıt kapatıldı", current_user.id, current_user.name)
     
     return {"message": "Fault confirmed and closed"}
+
+# Devam ediyor... (Karakter limiti nedeniyle bölündü)
+# Bu dosya server_postgres.py'nin devamıdır - birleştirilecek
 
 # ===== REPORTS & DASHBOARD =====
 
 @api_router.get("/dashboard/stats")
-async def get_dashboard_stats(current_user: User = Depends(get_current_user)):
-    total_devices = await db.devices.count_documents({})
-    total_faults = await db.fault_records.count_documents({})
-    open_faults = await db.fault_records.count_documents({"status": FaultStatus.OPEN})
-    in_progress_faults = await db.fault_records.count_documents({"status": FaultStatus.IN_PROGRESS})
-    closed_faults = await db.fault_records.count_documents({"status": FaultStatus.CLOSED})
+def get_dashboard_stats(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    total_devices = db.query(Device).count()
+    total_faults = db.query(FaultRecord).count()
+    open_faults = db.query(FaultRecord).filter(FaultRecord.status == FaultStatus.OPEN).count()
+    in_progress_faults = db.query(FaultRecord).filter(FaultRecord.status == FaultStatus.IN_PROGRESS).count()
+    closed_faults = db.query(FaultRecord).filter(FaultRecord.status == FaultStatus.CLOSED).count()
     
     # Average MTBF, MTTR, Availability
-    devices = await db.devices.find({}, {"_id": 0}).to_list(1000)
-    avg_mtbf = sum(d.get('mtbf', 0) for d in devices) / len(devices) if devices else 0
-    avg_mttr = sum(d.get('mttr', 0) for d in devices) / len(devices) if devices else 0
-    avg_availability = sum(d.get('availability', 100) for d in devices) / len(devices) if devices else 100
+    devices = db.query(Device).all()
+    avg_mtbf = sum(d.mtbf for d in devices) / len(devices) if devices else 0
+    avg_mttr = sum(d.mttr for d in devices) / len(devices) if devices else 0
+    avg_availability = sum(d.availability for d in devices) / len(devices) if devices else 100
     
     # Top 5 most reliable and least reliable devices
-    devices_by_availability = sorted(devices, key=lambda x: x.get('availability', 100), reverse=True)
-    most_reliable = devices_by_availability[:5]
-    least_reliable = devices_by_availability[-5:] if len(devices_by_availability) > 5 else []
+    devices_by_availability = sorted(devices, key=lambda x: x.availability, reverse=True)
+    most_reliable = [
+        {
+            "id": d.id,
+            "code": d.code,
+            "type": d.type,
+            "location": d.location,
+            "availability": d.availability,
+            "mtbf": d.mtbf
+        } for d in devices_by_availability[:5]
+    ]
+    least_reliable = [
+        {
+            "id": d.id,
+            "code": d.code,
+            "type": d.type,
+            "location": d.location,
+            "availability": d.availability,
+            "mtbf": d.mtbf
+        } for d in devices_by_availability[-5:] if len(devices_by_availability) > 5
+    ]
     
     return {
         "total_devices": total_devices,
@@ -621,83 +581,86 @@ async def get_dashboard_stats(current_user: User = Depends(get_current_user)):
     }
 
 @api_router.get("/reports/breakdown-frequency")
-async def breakdown_frequency_report(current_user: User = Depends(get_current_user)):
+def breakdown_frequency_report(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     if current_user.role not in [UserRole.MANAGER, UserRole.QUALITY]:
         raise HTTPException(status_code=403, detail="Not authorized")
     
-    devices = await db.devices.find({}, {"_id": 0}).to_list(1000)
+    devices = db.query(Device).all()
     
     report_data = []
     for device in devices:
-        if device.get('total_operating_hours', 0) > 0 and device.get('total_failures', 0) > 0:
-            frequency = (device['total_operating_hours'] / device['total_failures'])
+        if device.total_operating_hours > 0 and device.total_failures > 0:
+            frequency = device.total_operating_hours / device.total_failures
         else:
             frequency = 0
         
         report_data.append({
-            "device_code": device['code'],
-            "device_type": device['type'],
-            "location": device['location'],
-            "total_failures": device.get('total_failures', 0),
-            "operating_hours": device.get('total_operating_hours', 0),
+            "device_code": device.code,
+            "device_type": device.type,
+            "location": device.location,
+            "total_failures": device.total_failures,
+            "operating_hours": device.total_operating_hours,
             "breakdown_frequency": round(frequency, 2)
         })
     
     return report_data
 
 @api_router.get("/reports/intervention-duration")
-async def intervention_duration_report(current_user: User = Depends(get_current_user)):
+def intervention_duration_report(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     if current_user.role not in [UserRole.MANAGER, UserRole.QUALITY]:
         raise HTTPException(status_code=403, detail="Not authorized")
     
-    faults = await db.fault_records.find({"status": FaultStatus.CLOSED}, {"_id": 0}).to_list(1000)
+    faults = db.query(FaultRecord).filter(FaultRecord.status == FaultStatus.CLOSED).all()
     
     device_interventions = {}
     for fault in faults:
-        device_id = fault['device_id']
+        device_id = fault.device_id
         if device_id not in device_interventions:
             device_interventions[device_id] = {
-                "device_code": fault['device_code'],
-                "device_type": fault['device_type'],
+                "device_code": fault.device_code,
+                "device_type": fault.device_type,
                 "total_interventions": 0,
                 "total_duration": 0.0
             }
         
-        device_interventions[device_id]['total_interventions'] += 1
-        device_interventions[device_id]['total_duration'] += fault.get('repair_duration', 0.0)
+        device_interventions[device_id]["total_interventions"] += 1
+        device_interventions[device_id]["total_duration"] += fault.repair_duration
     
     report_data = []
     for device_id, data in device_interventions.items():
-        avg_duration = data['total_duration'] / data['total_interventions'] if data['total_interventions'] > 0 else 0
+        avg_duration = data["total_duration"] / data["total_interventions"] if data["total_interventions"] > 0 else 0
         report_data.append({
-            "device_code": data['device_code'],
-            "device_type": data['device_type'],
-            "total_interventions": data['total_interventions'],
+            "device_code": data["device_code"],
+            "device_type": data["device_type"],
+            "total_interventions": data["total_interventions"],
             "average_duration_hours": round(avg_duration, 2)
         })
     
     return report_data
 
 @api_router.get("/reports/technician-performance")
-async def technician_performance_report(current_user: User = Depends(get_current_user)):
+def technician_performance_report(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     if current_user.role not in [UserRole.MANAGER, UserRole.QUALITY]:
         raise HTTPException(status_code=403, detail="Not authorized")
     
-    technicians = await db.users.find({"role": UserRole.TECHNICIAN}, {"_id": 0, "password": 0}).to_list(1000)
+    technicians = db.query(User).filter(User.role == UserRole.TECHNICIAN).all()
     
     report_data = []
     for tech in technicians:
-        total_assigned = await db.fault_records.count_documents({"assigned_to": tech['id']})
-        completed = await db.fault_records.count_documents({"assigned_to": tech['id'], "status": FaultStatus.CLOSED})
+        total_assigned = db.query(FaultRecord).filter(FaultRecord.assigned_to == tech.id).count()
+        completed = db.query(FaultRecord).filter(
+            FaultRecord.assigned_to == tech.id,
+            FaultRecord.status == FaultStatus.CLOSED
+        ).count()
         success_rate = (completed / total_assigned * 100) if total_assigned > 0 else 0
         
         report_data.append({
-            "name": tech['name'],
-            "email": tech['email'],
+            "name": tech.name,
+            "email": tech.email,
             "total_assigned": total_assigned,
             "completed": completed,
-            "successful_repairs": tech.get('successful_repairs', 0),
-            "failed_repairs": tech.get('failed_repairs', 0),
+            "successful_repairs": tech.successful_repairs,
+            "failed_repairs": tech.failed_repairs,
             "success_rate": round(success_rate, 2)
         })
     
@@ -705,125 +668,104 @@ async def technician_performance_report(current_user: User = Depends(get_current
 
 # ===== TRANSFER MANAGEMENT ROUTES =====
 
-@api_router.post("/transfers", response_model=EquipmentTransfer)
-async def create_transfer(transfer_data: TransferCreate, current_user: User = Depends(get_current_user)):
-    # Get device
-    device = await db.devices.find_one({"id": transfer_data.device_id}, {"_id": 0})
+@api_router.post("/transfers", response_model=TransferResponse)
+def create_transfer(transfer_data: TransferCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    device = db.query(Device).filter(Device.id == transfer_data.device_id).first()
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
     
     transfer = EquipmentTransfer(
+        id=str(uuid.uuid4()),
         device_id=transfer_data.device_id,
-        device_code=device['code'],
-        device_type=device['type'],
-        from_location=device['location'],
+        device_type=device.type,
+        from_location=device.location,
         to_location=transfer_data.to_location,
         requested_by=current_user.id,
         requested_by_name=current_user.name,
         reason=transfer_data.reason
     )
     
-    transfer_dict = transfer.model_dump()
-    transfer_dict['requested_at'] = transfer_dict['requested_at'].isoformat()
-    
-    await db.equipment_transfers.insert_one(transfer_dict)
+    db.add(transfer)
+    db.commit()
+    db.refresh(transfer)
     
     return transfer
 
-@api_router.get("/transfers")
-async def get_transfers(status: Optional[str] = None, current_user: User = Depends(get_current_user)):
-    query = {}
-    if status:
-        query['status'] = status
+@api_router.get("/transfers", response_model=List[TransferResponse])
+def get_transfers(status: Optional[str] = None, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    query = db.query(EquipmentTransfer)
     
-    transfers = await db.equipment_transfers.find(query, {"_id": 0}).sort("requested_at", -1).to_list(1000)
-    for transfer in transfers:
-        for field in ['requested_at', 'approved_at', 'completed_at']:
-            if isinstance(transfer.get(field), str):
-                transfer[field] = datetime.fromisoformat(transfer[field])
+    if status:
+        query = query.filter(EquipmentTransfer.status == status)
+    
+    transfers = query.order_by(EquipmentTransfer.requested_at.desc()).all()
     return transfers
 
 @api_router.post("/transfers/{transfer_id}/approve")
-async def approve_transfer(transfer_id: str, current_user: User = Depends(get_current_user)):
+def approve_transfer(transfer_id: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     if current_user.role != UserRole.QUALITY:
         raise HTTPException(status_code=403, detail="Only quality department can approve transfers")
     
-    transfer = await db.equipment_transfers.find_one({"id": transfer_id}, {"_id": 0})
+    transfer = db.query(EquipmentTransfer).filter(EquipmentTransfer.id == transfer_id).first()
     if not transfer:
         raise HTTPException(status_code=404, detail="Transfer not found")
     
-    if transfer['status'] != TransferStatus.PENDING:
+    if transfer.status != TransferStatus.PENDING:
         raise HTTPException(status_code=400, detail="Transfer is not pending")
     
     approved_at = datetime.now(timezone.utc)
     
-    # Update transfer status
-    await db.equipment_transfers.update_one(
-        {"id": transfer_id},
-        {"$set": {
-            "status": TransferStatus.APPROVED,
-            "approved_by": current_user.id,
-            "approved_by_name": current_user.name,
-            "approved_at": approved_at.isoformat()
-        }}
-    )
+    transfer.status = TransferStatus.APPROVED
+    transfer.approved_by = current_user.id
+    transfer.approved_by_name = current_user.name
+    transfer.approved_at = approved_at
     
     # Update device location
-    await db.devices.update_one(
-        {"id": transfer['device_id']},
-        {"$set": {"location": transfer['to_location']}}
-    )
+    device = db.query(Device).filter(Device.id == transfer.device_id).first()
+    if device:
+        device.location = transfer.to_location
     
     # Mark as completed
-    await db.equipment_transfers.update_one(
-        {"id": transfer_id},
-        {"$set": {
-            "status": TransferStatus.COMPLETED,
-            "completed_at": approved_at.isoformat()
-        }}
-    )
+    transfer.status = TransferStatus.COMPLETED
+    transfer.completed_at = approved_at
+    
+    db.commit()
     
     return {"message": "Transfer approved and completed"}
 
 @api_router.post("/transfers/{transfer_id}/reject")
-async def reject_transfer(transfer_id: str, reject_data: TransferReject, current_user: User = Depends(get_current_user)):
+def reject_transfer(transfer_id: str, reject_data: TransferReject, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     if current_user.role != UserRole.QUALITY:
         raise HTTPException(status_code=403, detail="Only quality department can reject transfers")
     
-    transfer = await db.equipment_transfers.find_one({"id": transfer_id}, {"_id": 0})
+    transfer = db.query(EquipmentTransfer).filter(EquipmentTransfer.id == transfer_id).first()
     if not transfer:
         raise HTTPException(status_code=404, detail="Transfer not found")
     
-    if transfer['status'] != TransferStatus.PENDING:
+    if transfer.status != TransferStatus.PENDING:
         raise HTTPException(status_code=400, detail="Transfer is not pending")
     
-    await db.equipment_transfers.update_one(
-        {"id": transfer_id},
-        {"$set": {
-            "status": TransferStatus.REJECTED,
-            "approved_by": current_user.id,
-            "approved_by_name": current_user.name,
-            "approved_at": datetime.now(timezone.utc).isoformat(),
-            "rejection_reason": reject_data.rejection_reason
-        }}
-    )
+    transfer.status = TransferStatus.REJECTED
+    transfer.approved_by = current_user.id
+    transfer.approved_by_name = current_user.name
+    transfer.approved_at = datetime.now(timezone.utc)
+    transfer.rejection_reason = reject_data.rejection_reason
+    
+    db.commit()
     
     return {"message": "Transfer rejected"}
 
 # ===== EXCEL REPORT ROUTES =====
 
-from excel_service import ExcelReportService
-from fastapi.responses import StreamingResponse
-
 @api_router.get("/reports/excel/device-failure-frequency")
-async def download_device_failure_frequency(year: Optional[int] = None, current_user: User = Depends(get_current_user)):
+async def download_device_failure_frequency(year: Optional[int] = None, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     if current_user.role != UserRole.QUALITY:
         raise HTTPException(status_code=403, detail="Only quality department can download reports")
     
     if not year:
         year = datetime.now(timezone.utc).year
     
-    excel_file = await ExcelReportService.generate_device_failure_frequency_report(db, year)
+    excel_file = await ExcelReportService.generate_device_failure_frequency_report_postgres(db, year)
     
     return StreamingResponse(
         excel_file,
@@ -832,14 +774,14 @@ async def download_device_failure_frequency(year: Optional[int] = None, current_
     )
 
 @api_router.get("/reports/excel/intervention-duration")
-async def download_intervention_duration(year: Optional[int] = None, current_user: User = Depends(get_current_user)):
+async def download_intervention_duration(year: Optional[int] = None, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     if current_user.role != UserRole.QUALITY:
         raise HTTPException(status_code=403, detail="Only quality department can download reports")
     
     if not year:
         year = datetime.now(timezone.utc).year
     
-    excel_file = await ExcelReportService.generate_intervention_duration_report(db, year)
+    excel_file = await ExcelReportService.generate_intervention_duration_report_postgres(db, year)
     
     return StreamingResponse(
         excel_file,
@@ -848,14 +790,14 @@ async def download_intervention_duration(year: Optional[int] = None, current_use
     )
 
 @api_router.get("/reports/excel/facility-issues")
-async def download_facility_issues(year: Optional[int] = None, current_user: User = Depends(get_current_user)):
+async def download_facility_issues(year: Optional[int] = None, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     if current_user.role != UserRole.QUALITY:
         raise HTTPException(status_code=403, detail="Only quality department can download reports")
     
     if not year:
         year = datetime.now(timezone.utc).year
     
-    excel_file = await ExcelReportService.generate_facility_issues_report(db, year)
+    excel_file = await ExcelReportService.generate_facility_issues_report_postgres(db, year)
     
     return StreamingResponse(
         excel_file,
@@ -866,26 +808,32 @@ async def download_facility_issues(year: Optional[int] = None, current_user: Use
 # ===== QUALITY DASHBOARD LOGS =====
 
 @api_router.get("/quality/all-logs")
-async def get_all_system_logs(current_user: User = Depends(get_current_user)):
+def get_all_system_logs(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     if current_user.role != UserRole.QUALITY:
         raise HTTPException(status_code=403, detail="Only quality department can view all logs")
     
-    logs = await db.logs.find({}, {"_id": 0}).sort("timestamp", -1).limit(500).to_list(500)
-    for log in logs:
-        if isinstance(log.get('timestamp'), str):
-            log['timestamp'] = datetime.fromisoformat(log['timestamp'])
-    return logs
+    logs = db.query(Log).order_by(Log.timestamp.desc()).limit(500).all()
+    return [
+        {
+            "id": log.id,
+            "record_id": log.record_id,
+            "event": log.event,
+            "timestamp": log.timestamp,
+            "user_id": log.user_id,
+            "user_name": log.user_name
+        } for log in logs
+    ]
 
 @api_router.get("/quality/system-stats")
-async def get_quality_system_stats(current_user: User = Depends(get_current_user)):
+def get_quality_system_stats(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     if current_user.role != UserRole.QUALITY:
         raise HTTPException(status_code=403, detail="Only quality department can view system stats")
     
-    total_users = await db.users.count_documents({})
-    total_devices = await db.devices.count_documents({})
-    total_faults = await db.fault_records.count_documents({})
-    total_transfers = await db.equipment_transfers.count_documents({})
-    pending_transfers = await db.equipment_transfers.count_documents({"status": TransferStatus.PENDING})
+    total_users = db.query(User).count()
+    total_devices = db.query(Device).count()
+    total_faults = db.query(FaultRecord).count()
+    total_transfers = db.query(EquipmentTransfer).count()
+    pending_transfers = db.query(EquipmentTransfer).filter(EquipmentTransfer.status == TransferStatus.PENDING).count()
     
     return {
         "total_users": total_users,
@@ -894,6 +842,8 @@ async def get_quality_system_stats(current_user: User = Depends(get_current_user
         "total_transfers": total_transfers,
         "pending_transfers": pending_transfers
     }
+
+# ===== FASTAPI APP SETUP =====
 
 app.include_router(api_router)
 
@@ -911,6 +861,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+@app.on_event("startup")
+def startup():
+    logger.info("TÜSEP Backend Started - PostgreSQL Mode")
+
 @app.on_event("shutdown")
-async def shutdown_db_client():
-    client.close()
+def shutdown():
+    logger.info("TÜSEP Backend Shutdown")
