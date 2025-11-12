@@ -111,7 +111,7 @@ class FaultRecordResponse(BaseModel):
     repair_start: Optional[datetime] = None
     repair_end: Optional[datetime] = None
     repair_duration: float = 0.0
-    repair_notes: str = ""
+    repair_notes: Optional[str] = ""
     repair_category: Optional[str] = None
     breakdown_iteration: int = 0
     status: str = FaultStatus.OPEN
