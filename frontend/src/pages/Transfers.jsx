@@ -235,7 +235,7 @@ const Transfers = () => {
                 <SelectContent>
                   {devices.map((device) => (
                     <SelectItem key={device.id} value={device.id}>
-                      {device.code} - {device.type} ({device.location})
+                      {device.id} - {device.type} ({device.location})
                     </SelectItem>
                   ))}
                 </SelectContent>
