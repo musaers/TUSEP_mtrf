@@ -593,7 +593,7 @@ def breakdown_frequency_report(current_user: User = Depends(get_current_user), d
             frequency = 0
         
         report_data.append({
-            "device_code": device.code,
+            "device_id": device.id,
             "device_type": device.type,
             "location": device.location,
             "total_failures": device.total_failures,
