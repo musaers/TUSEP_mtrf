@@ -101,3 +101,119 @@
 #====================================================================================================
 # Testing Data - Main Agent and testing sub agent both should log testing data below this section
 #====================================================================================================
+
+user_problem_statement: |
+  User wants to remove the 'code' column from devices table and use 'id' as the unique identifier.
+  Additionally, add filtering functionality for devices by device_id, type, and location on both
+  the device listing page and fault creation page.
+
+backend:
+  - task: "Remove device code column from database models"
+    implemented: true
+    working: "NA"
+    file: "backend/database.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Removed code column from Device, FaultRecord, and EquipmentTransfer models"
+
+  - task: "Update API endpoints to remove code references"
+    implemented: true
+    working: "NA"
+    file: "backend/server_postgres.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Updated DeviceResponse, DeviceCreate, FaultRecordResponse, TransferResponse to remove code field"
+
+  - task: "Add device filtering endpoint"
+    implemented: true
+    working: "NA"
+    file: "backend/server_postgres.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Updated GET /api/devices endpoint to accept optional query params: device_id, type, location"
+
+frontend:
+  - task: "Update device display to show ID instead of code"
+    implemented: true
+    working: "NA"
+    file: "frontend/src/pages/Faults.jsx, Devices.jsx, DeviceDetails.jsx, Transfers.jsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Replaced all device_code references with device_id across all pages"
+
+  - task: "Add filtering UI on CreateFault page"
+    implemented: true
+    working: "NA"
+    file: "frontend/src/pages/CreateFault.jsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Added filter section with device_id, type, and location filters before device selection"
+
+  - task: "Add filtering UI on Devices page"
+    implemented: true
+    working: "NA"
+    file: "frontend/src/pages/Devices.jsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Added comprehensive filter card with device_id search, type dropdown, and location dropdown"
+
+metadata:
+  created_by: "main_agent"
+  version: "1.0"
+  test_sequence: 0
+  run_ui: false
+
+test_plan:
+  current_focus:
+    - "Add device filtering endpoint"
+    - "Update API endpoints to remove code references"
+    - "Add filtering UI on CreateFault page"
+    - "Add filtering UI on Devices page"
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+
+agent_communication:
+  - agent: "main"
+    message: |
+      I have successfully removed the 'code' column from all database models and updated all API endpoints.
+      The filtering functionality has been implemented on both backend (query params) and frontend (filter UI).
+      
+      Changes made:
+      1. Database models: Removed code from Device, FaultRecord, EquipmentTransfer
+      2. Backend: Updated all Pydantic models and endpoints to use id instead of code
+      3. Backend: Added filtering support to GET /api/devices with device_id, type, location params
+      4. Frontend: Updated all pages to display device_id instead of device_code
+      5. Frontend: Added filter UI on CreateFault page with all three filters
+      6. Frontend: Added comprehensive filter card on Devices page
+      
+      Please test the following:
+      - Device API endpoints (GET /api/devices with filters)
+      - Device creation (POST /api/devices without code)
+      - Fault creation flow with new filtering
+      - Device listing page with filters
+      - Transfer endpoints still working without code
