@@ -471,6 +471,75 @@ class BackendTester:
                 f"Error creating fault: {str(e)}"
             )
 
+    def test_individual_device_retrieval(self):
+        """Test GET /api/devices/{device_id} - Individual device retrieval"""
+        print("🔍 Testing individual device retrieval...")
+        
+        if not self.devices:
+            self.log_result(
+                "Individual Device Retrieval - Prerequisites",
+                False,
+                "No devices available for individual retrieval test"
+            )
+            return
+        
+        test_device = self.devices[0]
+        device_id = test_device["id"]
+        
+        try:
+            response = requests.get(
+                f"{BACKEND_URL}/devices/{device_id}",
+                headers=self.get_auth_headers("manager")
+            )
+            
+            if response.status_code == 200:
+                device_data = response.json()
+                
+                # Check that response doesn't include code field
+                if "code" in device_data:
+                    self.log_result(
+                        "Individual Device Retrieval - No Code Field",
+                        False,
+                        "Response still contains 'code' field",
+                        device_data
+                    )
+                else:
+                    # Verify required fields are present and correct
+                    if device_data.get("id") == device_id:
+                        self.log_result(
+                            "Individual Device Retrieval - Success",
+                            True,
+                            f"Device retrieved successfully with ID: {device_id}"
+                        )
+                    else:
+                        self.log_result(
+                            "Individual Device Retrieval - ID Mismatch",
+                            False,
+                            f"Retrieved device ID doesn't match requested ID",
+                            device_data
+                        )
+            elif response.status_code == 404:
+                self.log_result(
+                    "Individual Device Retrieval - Not Found",
+                    False,
+                    f"Device not found: {device_id}",
+                    response.text
+                )
+            else:
+                self.log_result(
+                    "Individual Device Retrieval - API Call",
+                    False,
+                    f"Failed to retrieve device: {response.status_code}",
+                    response.text
+                )
+                
+        except Exception as e:
+            self.log_result(
+                "Individual Device Retrieval - Exception",
+                False,
+                f"Error retrieving device: {str(e)}"
+            )
+
     def test_transfer_creation_without_device_code(self):
         """Test POST /api/transfers - Transfer creation without device_code"""
         print("🚚 Testing transfer creation without device_code...")
