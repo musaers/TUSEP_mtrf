@@ -158,7 +158,7 @@ const Transfers = () => {
                   <tr key={transfer.id} className="border-b hover:bg-gray-50" data-testid={`transfer-row-${transfer.id}`}>
                     <td className="py-3 px-4">
                       <div>
-                        <div className="font-medium text-gray-900">{transfer.device_code}</div>
+                        <div className="font-medium text-gray-900">ID: {transfer.device_id}</div>
                         <div className="text-sm text-gray-600">{transfer.device_type}</div>
                       </div>
                     </td>
