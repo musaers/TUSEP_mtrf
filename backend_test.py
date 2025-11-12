@@ -13,11 +13,11 @@ from datetime import datetime
 # Get backend URL from environment
 BACKEND_URL = "https://healthmaint-app-1.preview.emergentagent.com/api"
 
-# Test credentials - using newly created test users
+# Test credentials - using correct credentials from review request
 TEST_USERS = {
-    "manager": {"email": "testmanager@hospital.com", "password": "password123"},
-    "technician": {"email": "testtechnician@hospital.com", "password": "password123"},
-    "health_staff": {"email": "testhealthstaff@hospital.com", "password": "password123"}
+    "manager": {"email": "manager@hospital.com", "password": "password123"},
+    "technician": {"email": "tech@hospital.com", "password": "password123"},
+    "health_staff": {"email": "staff@hospital.com", "password": "password123"}
 }
 
 class BackendTester:
