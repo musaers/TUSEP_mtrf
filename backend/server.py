@@ -628,7 +628,7 @@ def intervention_duration_report(current_user: User = Depends(get_current_user),
     for device_id, data in device_interventions.items():
         avg_duration = data["total_duration"] / data["total_interventions"] if data["total_interventions"] > 0 else 0
         report_data.append({
-            "device_code": data["device_code"],
+            "device_id": data["device_id"],
             "device_type": data["device_type"],
             "total_interventions": data["total_interventions"],
             "average_duration_hours": round(avg_duration, 2)
