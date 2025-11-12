@@ -615,7 +615,7 @@ def intervention_duration_report(current_user: User = Depends(get_current_user),
         device_id = fault.device_id
         if device_id not in device_interventions:
             device_interventions[device_id] = {
-                "device_code": fault.device_code,
+                "device_id": device_id,
                 "device_type": fault.device_type,
                 "total_interventions": 0,
                 "total_duration": 0.0
